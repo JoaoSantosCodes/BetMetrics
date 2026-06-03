@@ -35,6 +35,10 @@ export interface Fixture {
   value_ev: number; // expected value percentage e.g. 15.5 for 15.5%
   // Alerts
   active_alerts: string[]; // e.g. ["EXPLORE_LATE_GOALS", "VALUE_BET"]
+  // Dynamic alternative markets (calculated on-the-fly)
+  dnbOdds?: { home: number; away: number };
+  asianHandicapOdds?: { homeMinus05: number; homePlus05: number; homeMinus15: number; homePlus15: number };
+  cornersOdds?: { expectedHome: number; expectedAway: number; expectedTotal: number; over95: number; under95: number };
 }
 
 export interface RobotFilter {

@@ -46,6 +46,19 @@ const MATCH_TEMPLATES = [
 
 import { fetchRealFixturesToday } from './apiFootball';
 
+export function enrichFixture(f: Fixture): Fixture {
+  const homeStats = TEAM_HISTORICAL_STATS[f.home_team] || DEFAULT_TEAM_STATS;
+  const awayStats = TEAM_HISTORICAL_STATS[f.away_team] || DEFAULT_TEAM_STATS;
+  const poisson = calculatePoisson(homeStats, awayStats);
+  
+  return {
+    ...f,
+    dnbOdds: poisson.dnbOdds,
+    asianHandicapOdds: poisson.asianHandicapOdds,
+    cornersOdds: poisson.cornersOdds
+  };
+}
+
 export async function getOrInitializeFixtures(): Promise<Fixture[]> {
   let fixtures = await getFixtures();
 
@@ -59,7 +72,7 @@ export async function getOrInitializeFixtures(): Promise<Fixture[]> {
     await saveFixtures(fixtures);
   }
 
-  return fixtures;
+  return fixtures.map(enrichFixture);
 }
 
 // Generate the mock data using our Poisson calculator
@@ -319,7 +332,7 @@ export async function advanceSimulation(): Promise<Fixture[]> {
   }
 
   await saveFixtures(updated);
-  return updated;
+  return updated.map(enrichFixture);
 }
 
 /**

@@ -552,6 +552,13 @@ export default function Home() {
                       <span className={`odd-chip ${match.bookie_odd_away > match.fair_odd_away && match.has_value && match.value_market.includes(match.away_team) ? 'value-highlight' : ''}`} style={{ marginLeft: '0.25rem' }}>{match.bookie_odd_away}</span>
                     </div>
                   </div>
+
+                  {/* Alternative Markets */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px dashed rgba(255,255,255,0.04)', paddingTop: '0.5rem' }}>
+                    <span>⚖️ <b>DNB (Empate Anula):</b> Casa {match.dnbOdds?.home ?? '-'} / Fora {match.dnbOdds?.away ?? '-'}</span>
+                    <span>🚩 <b>Cantos (9.5):</b> Over {match.cornersOdds?.over95 ?? '-'} (Proj: {match.cornersOdds?.expectedTotal ?? '-'})</span>
+                    <span>🛡️ <b>H. Asiático:</b> AH -1.5 ({match.asianHandicapOdds?.homeMinus15 ?? '-'}) / AH +1.5 ({match.asianHandicapOdds?.homePlus15 ?? '-'})</span>
+                  </div>
                 </div>
               ))}
             </div>
