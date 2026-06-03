@@ -43,11 +43,18 @@ const MATCH_TEMPLATES = [
   { id: 'm8', home: 'Porto', away: 'Benfica', league: 'Liga Portugal', status: 'LIVE', minute: 42, score_home: 2, score_away: 0 }
 ];
 
+import { fetchRealFixturesToday } from './apiFootball';
+
 export async function getOrInitializeFixtures(): Promise<Fixture[]> {
   let fixtures = await getFixtures();
 
   if (fixtures.length === 0) {
-    fixtures = generateMockFixtures();
+    const realFixtures = await fetchRealFixturesToday();
+    if (realFixtures) {
+      fixtures = realFixtures;
+    } else {
+      fixtures = generateMockFixtures();
+    }
     await saveFixtures(fixtures);
   }
 
