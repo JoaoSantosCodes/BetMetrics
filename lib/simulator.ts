@@ -1,6 +1,7 @@
 import { Fixture, getFixtures, saveFixtures, getFilters, RobotFilter } from './db';
 import { calculatePoisson, TeamStats } from './poisson';
 import { calculateKelly } from './kelly';
+import { sendValueBetAlert, sendLivePressureAlert, sendRobotTipAlert } from './telegram';
 
 // Team historical stats mock data (avg goals scored/conceded)
 const TEAM_HISTORICAL_STATS: { [key: string]: TeamStats } = {
@@ -145,6 +146,20 @@ function generateMockFixtures(): Fixture[] {
       fixtureDate.setHours(now.getHours() - 3); // 3 hours ago
     }
 
+    // Dispatch Telegram alert for new pre-match value bets
+    if (has_value) {
+      sendValueBetAlert(
+        t.home,
+        t.away,
+        t.league,
+        value_market,
+        value_market.includes(t.home) ? poisson.fairOdds.homeWin : value_market.includes('Over') ? poisson.fairOdds.over25 : poisson.fairOdds.bttsYes,
+        value_market.includes(t.home) ? bookie_odd_home : value_market.includes('Over') ? bookie_odd_over25 : bookie_odd_btts,
+        value_ev,
+        value_market.includes(t.home) ? kellyHome.suggestedStakePercent : value_market.includes('Over') ? kellyOver.suggestedStakePercent : kellyBtts.suggestedStakePercent
+      );
+    }
+
     result.push({
       id: t.id,
       home_team: t.home,
@@ -244,7 +259,49 @@ export async function advanceSimulation(): Promise<Fixture[]> {
     const robotTip = checkRobotFiltersForMatch(f, homeStats, awayStats, filters);
     if (robotTip) {
       active_alerts.push('ROBOT_TIP');
-      // Update value market or append tip info if needed
+    }
+
+    // Telegram Dispatches for newly triggered alerts (state transitions)
+    if (active_alerts.includes('EXPLORE_LATE_GOALS') && !f.active_alerts.includes('EXPLORE_LATE_GOALS')) {
+      sendLivePressureAlert(
+        f.home_team,
+        f.away_team,
+        f.league,
+        newMinute,
+        `${newScoreHome} - ${newScoreAway}`,
+        newPossessionHome,
+        newAttacksHome,
+        newAttacksAway
+      );
+    }
+
+    if (active_alerts.includes('ROBOT_TIP') && !f.active_alerts.includes('ROBOT_TIP')) {
+      const matchedFilter = filters.find(filter => {
+        if (!filter.active) return false;
+        const crit = filter.criteria;
+        const homeConsecutiveScored = Math.round(homeStats.goalsScoredHome * 2.5);
+        const awayConsecutiveConceded = Math.round(awayStats.goalsConcededAway * 3.2);
+        const matchesHomeScored = homeConsecutiveScored >= crit.homeMinScoredConsecutive;
+        const matchesAwayConceded = awayConsecutiveConceded >= crit.awayMinConcededConsecutive;
+        return matchesHomeScored && matchesAwayConceded;
+      });
+
+      if (matchedFilter) {
+        const poisson = calculatePoisson(homeStats, awayStats);
+        let prob = 0;
+        if (matchedFilter.criteria.market === 'BTTS') prob = poisson.probabilities.bttsYes * 100;
+        else if (matchedFilter.criteria.market === 'OVER_25') prob = poisson.probabilities.over25 * 100;
+        else if (matchedFilter.criteria.market === '1X2') prob = poisson.probabilities.homeWin * 100;
+
+        sendRobotTipAlert(
+          f.home_team,
+          f.away_team,
+          f.league,
+          matchedFilter.name,
+          matchedFilter.criteria.market === '1X2' ? `Vitória ${f.home_team}` : matchedFilter.criteria.market === 'OVER_25' ? 'Over 2.5 Gols' : 'Ambas Marcam: Sim',
+          Math.round(prob)
+        );
+      }
     }
 
     updated.push({
