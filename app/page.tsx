@@ -271,7 +271,7 @@ export default function Home() {
 
   // Settle Bankroll stats
   const getBancaStats = () => {
-    if (bankroll.length === 0) return { balance: 0, profit: 0, winRate: 0, totalBets: 0 };
+    if (bankroll.length === 0) return { balance: 0, profit: 0, winRate: 0, totalBets: 0, roi: 0, yieldPct: 0, profitFactor: 1.0, maxDrawdown: 0 };
     const latestTx = bankroll[bankroll.length - 1];
     const initialTx = bankroll[0];
     
@@ -281,15 +281,117 @@ export default function Home() {
 
     const betTransactions = bankroll.filter(t => t.market !== 'Configuração');
     const totalBets = betTransactions.length;
-    const wonBets = betTransactions.filter(t => t.result === 'WON').length;
-    const winRate = totalBets > 0 ? (wonBets / totalBets) * 100 : 0;
+    const settledBets = betTransactions.filter(t => t.result !== 'PENDING');
+    const wonBets = settledBets.filter(t => t.result === 'WON').length;
+    const winRate = settledBets.length > 0 ? (wonBets / settledBets.length) * 100 : 0;
+
+    // Advanced Metrics
+    // ROI = (Profit / Initial Balance) * 100
+    const roi = initialBalance > 0 ? (profit / initialBalance) * 100 : 0;
+
+    // Yield = (Profit / Total Staked) * 100
+    const totalStaked = settledBets.reduce((acc, t) => acc + t.amount_staked, 0);
+    const totalNetReturns = settledBets.reduce((acc, t) => acc + t.profit_loss, 0);
+    const yieldPct = totalStaked > 0 ? (totalNetReturns / totalStaked) * 100 : 0;
+
+    // Profit Factor = Gross Profits / Gross Losses
+    const grossProfit = settledBets.filter(t => t.profit_loss > 0).reduce((acc, t) => acc + t.profit_loss, 0);
+    const grossLoss = settledBets.filter(t => t.profit_loss < 0).reduce((acc, t) => acc + Math.abs(t.profit_loss), 0);
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 1.0;
+
+    // Max Drawdown Calculation
+    let peak = initialBalance;
+    let maxDd = 0;
+    bankroll.forEach(tx => {
+      if (tx.current_balance > peak) {
+        peak = tx.current_balance;
+      }
+      const dd = peak > 0 ? ((peak - tx.current_balance) / peak) * 100 : 0;
+      if (dd > maxDd) {
+        maxDd = dd;
+      }
+    });
 
     return {
       balance,
       profit,
       winRate: parseFloat(winRate.toFixed(1)),
-      totalBets
+      totalBets,
+      roi: parseFloat(roi.toFixed(1)),
+      yieldPct: parseFloat(yieldPct.toFixed(1)),
+      profitFactor: profitFactor === Infinity ? '∞' : parseFloat(profitFactor.toFixed(2)),
+      maxDrawdown: parseFloat(maxDd.toFixed(1))
     };
+  };
+
+  // Custom SVG Bankroll Evolution Line Chart
+  const renderSVGChart = () => {
+    if (bankroll.length < 2) return null;
+
+    const width = 600;
+    const height = 180;
+    const padding = 25;
+
+    const balances = bankroll.map(t => t.current_balance);
+    const minVal = Math.min(...balances) * 0.98;
+    const maxVal = Math.max(...balances) * 1.02;
+    const valRange = maxVal - minVal || 1.0;
+
+    const points = bankroll.map((tx, index) => {
+      const x = padding + (index / (bankroll.length - 1)) * (width - 2 * padding);
+      const y = height - padding - ((tx.current_balance - minVal) / valRange) * (height - 2 * padding);
+      return { x, y, tx };
+    });
+
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(height - padding).toFixed(1)} L ${points[0].x.toFixed(1)} ${(height - padding).toFixed(1)} Z`.trim();
+
+    const isNetPositive = (balances[balances.length - 1] - balances[0]) >= 0;
+    const strokeColor = isNetPositive ? 'var(--accent-primary)' : 'var(--accent-danger)';
+    const gradientId = 'bankroll-gradient';
+
+    return (
+      <div className="glass-card" style={{ marginBottom: '2rem', padding: '1.25rem' }}>
+        <h3 className="panel-title" style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>📈 Evolução do Saldo da Banca</h3>
+        <div style={{ width: '100%', height: `${height}px`, overflow: 'hidden' }}>
+          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" style={{ overflow: 'visible' }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={strokeColor} stopOpacity="0.2" />
+                <stop offset="100%" stopColor={strokeColor} stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
+
+            {/* Gridlines */}
+            <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+            <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
+            <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+
+            {/* Area Path */}
+            <path d={areaPath} fill={`url(#${gradientId})`} />
+
+            {/* Line Path */}
+            <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+            {/* Data Points */}
+            {points.map((p, i) => (
+              <g key={i} className="chart-point-group">
+                <circle 
+                  cx={p.x} 
+                  cy={p.y} 
+                  r="3.5" 
+                  fill={strokeColor} 
+                  stroke="var(--bg-color)" 
+                  strokeWidth="1.5"
+                  style={{ cursor: 'pointer' }}
+                />
+                <title>{`${p.tx.fixture_name}\nSaldo: $${p.tx.current_balance.toFixed(2)}`}</title>
+              </g>
+            ))}
+          </svg>
+        </div>
+      </div>
+    );
   };
 
   const stats = getBancaStats();
@@ -711,7 +813,7 @@ export default function Home() {
         {activeTab === 'bankroll' && (
           <div>
             {/* Stats Cards */}
-            <div className="banca-summary">
+            <div className="banca-summary" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
               <div className="banca-card glass-card">
                 <span className="banca-card-label">Banca Disponível</span>
                 <span className="banca-card-value">${stats.balance.toFixed(2)}</span>
@@ -723,14 +825,25 @@ export default function Home() {
                 </span>
               </div>
               <div className="banca-card glass-card">
-                <span className="banca-card-label">Assertividade (Win Rate)</span>
-                <span className="banca-card-value" style={{ color: 'var(--accent-secondary)' }}>{stats.winRate}%</span>
+                <span className="banca-card-label">Yield (%)</span>
+                <span className={`banca-card-value ${stats.yieldPct >= 0 ? 'profit' : 'loss'}`}>{stats.yieldPct}%</span>
               </div>
               <div className="banca-card glass-card">
-                <span className="banca-card-label">Total de Apostas</span>
-                <span className="banca-card-value">{stats.totalBets}</span>
+                <span className="banca-card-label">ROI Acumulado</span>
+                <span className={`banca-card-value ${stats.roi >= 0 ? 'profit' : 'loss'}`}>{stats.roi}%</span>
+              </div>
+              <div className="banca-card glass-card">
+                <span className="banca-card-label">Fator de Lucro</span>
+                <span className="banca-card-value" style={{ color: 'var(--accent-secondary)' }}>{stats.profitFactor}</span>
+              </div>
+              <div className="banca-card glass-card">
+                <span className="banca-card-label">Max Drawdown</span>
+                <span className="banca-card-value" style={{ color: 'var(--accent-warning)' }}>{stats.maxDrawdown}%</span>
               </div>
             </div>
+
+            {/* Glowing SVG Bankroll Evolution Chart */}
+            {renderSVGChart()}
 
             <div className="grid-container">
               {/* Ledger history */}
